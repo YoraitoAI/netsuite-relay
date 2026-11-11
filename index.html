@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Yoraito NetSuite OAuth Relay</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+         display: flex; justify-content: center; align-items: center; height: 100vh; 
+         margin: 0; background: #f5f5f7; color: #1a1a2e; }
+  .container { text-align: center; padding: 40px; background: white; border-radius: 12px; 
+               box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 500px; }
+  h1 { color: #4361ee; margin-bottom: 15px; }
+  .status { font-size: 1.1rem; margin: 20px 0; }
+  .success { color: #28a745; }
+  .error { color: #dc3545; }
+  .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #4361ee; border-radius: 50%; 
+             width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 20px auto; }
+  @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  .code { font-family: monospace; background: #f0f0f0; padding: 10px; border-radius: 6px; 
+          word-break: break-all; margin: 15px 0; font-size: 0.85rem; }
+  .btn { background: #4361ee; color: white; border: none; padding: 10px 20px; 
+         border-radius: 6px; cursor: pointer; margin-top: 15px; }
+</style>
+</head>
+<body>
+  <div class="container">
+    <h1>Yoraito NetSuite Connect</h1>
+    <div id="status" class="status">Processing authentication...</div>
+    <div id="spinner" class="spinner"></div>
+    <div id="code-display" style="display:none;">
+      <p>Authorization code received. You can close this window.</p>
+      <div class="code" id="auth-code"></div>
+      <p style="font-size: 0.85rem; color: #666;">This code has been sent to your local Yoraito app.</p>
+    </div>
+    <div id="error-display" style="display:none;">
+      <p class="error" id="error-message"></p>
+      <button class="btn" onclick="window.close()">Close</button>
+    </div>
+  </div>
+
+  <script>
+    // NetSuite redirects here with ?code=...&state=...
+    // We need to forward this to the local Yoraito app
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    const state = params.get('state');
+    const error = params.get('error');
+    const errorDesc = params.get('error_description');
+
+    const status = document.getElementById('status');
+    const spinner = document.getElementById('spinner');
+    const codeDisplay = document.getElementById('code-display');
+    const errorDisplay = document.getElementById('error-display');
+
+    if (error) {
+      spinner.style.display = 'none';
+      status.textContent = 'Authentication failed';
+      status.className = 'status error';
+      document.getElementById('error-message').textContent = errorDesc || error;
+      errorDisplay.style.display = 'block';
+    } else if (code) {
+      spinner.style.display = 'none';
+      status.textContent = 'Authentication successful!';
+      status.className = 'status success';
+      document.getElementById('auth-code').textContent = code.substring(0, 20) + '...';
+      codeDisplay.style.display = 'block';
+
+      // Forward to local app via redirect
+      // The local app should be listening on 127.0.0.1 with a callback endpoint
+      const localCallback = 'http://127.0.0.1:17842/api/netsuite/callback?code=' + 
+                            encodeURIComponent(code) + '&state=' + encodeURIComponent(state || '');
+      
+      // Try to redirect to local app
+      fetch(localCallback, { mode: 'no-cors' })
+        .then(() => {
+          status.textContent = 'Connected! You can close this window.';
+        })
+        .catch(() => {
+          // Local app not running or not reachable
+          status.textContent = 'Code received. Please return to the Yoraito app.';
+        });
+    } else {
+      spinner.style.display = 'none';
+      status.textContent = 'No authorization code received';
+      status.className = 'status error';
+      document.getElementById('error-message').textContent = 'Missing code parameter. Please try again.';
+      errorDisplay.style.display = 'block';
+    }
+  </script>
+</body>
+</html>
