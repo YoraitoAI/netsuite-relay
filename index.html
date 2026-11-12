@@ -1,91 +1,43 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Yoraito NetSuite OAuth Relay</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Connecting NetSuite</title>
 <style>
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-         display: flex; justify-content: center; align-items: center; height: 100vh; 
-         margin: 0; background: #f5f5f7; color: #1a1a2e; }
-  .container { text-align: center; padding: 40px; background: white; border-radius: 12px; 
-               box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 500px; }
-  h1 { color: #4361ee; margin-bottom: 15px; }
-  .status { font-size: 1.1rem; margin: 20px 0; }
-  .success { color: #28a745; }
-  .error { color: #dc3545; }
-  .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #4361ee; border-radius: 50%; 
-             width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 20px auto; }
-  @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-  .code { font-family: monospace; background: #f0f0f0; padding: 10px; border-radius: 6px; 
-          word-break: break-all; margin: 15px 0; font-size: 0.85rem; }
-  .btn { background: #4361ee; color: white; border: none; padding: 10px 20px; 
-         border-radius: 6px; cursor: pointer; margin-top: 15px; }
+  body { font-family: system-ui, sans-serif; max-width: 34rem; margin: 4rem auto; padding: 0 1rem; color: #1d2433; }
+  code { background: #eef1f6; padding: 0 .25rem; border-radius: 3px; }
 </style>
 </head>
 <body>
-  <div class="container">
-    <h1>Yoraito NetSuite Connect</h1>
-    <div id="status" class="status">Processing authentication...</div>
-    <div id="spinner" class="spinner"></div>
-    <div id="code-display" style="display:none;">
-      <p>Authorization code received. You can close this window.</p>
-      <div class="code" id="auth-code"></div>
-      <p style="font-size: 0.85rem; color: #666;">This code has been sent to your local Yoraito app.</p>
-    </div>
-    <div id="error-display" style="display:none;">
-      <p class="error" id="error-message"></p>
-      <button class="btn" onclick="window.close()">Close</button>
-    </div>
-  </div>
-
-  <script>
-    // NetSuite redirects here with ?code=...&state=...
-    // We need to forward this to the local Yoraito app
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get('code');
-    const state = params.get('state');
-    const error = params.get('error');
-    const errorDesc = params.get('error_description');
-
-    const status = document.getElementById('status');
-    const spinner = document.getElementById('spinner');
-    const codeDisplay = document.getElementById('code-display');
-    const errorDisplay = document.getElementById('error-display');
-
-    if (error) {
-      spinner.style.display = 'none';
-      status.textContent = 'Authentication failed';
-      status.className = 'status error';
-      document.getElementById('error-message').textContent = errorDesc || error;
-      errorDisplay.style.display = 'block';
-    } else if (code) {
-      spinner.style.display = 'none';
-      status.textContent = 'Authentication successful!';
-      status.className = 'status success';
-      document.getElementById('auth-code').textContent = code.substring(0, 20) + '...';
-      codeDisplay.style.display = 'block';
-
-      // Forward to local app via redirect
-      // The local app should be listening on 127.0.0.1 with a callback endpoint
-      const localCallback = 'http://127.0.0.1:17842/api/netsuite/callback?code=' + 
-                            encodeURIComponent(code) + '&state=' + encodeURIComponent(state || '');
-      
-      // Try to redirect to local app
-      fetch(localCallback, { mode: 'no-cors' })
-        .then(() => {
-          status.textContent = 'Connected! You can close this window.';
-        })
-        .catch(() => {
-          // Local app not running or not reachable
-          status.textContent = 'Code received. Please return to the Yoraito app.';
-        });
-    } else {
-      spinner.style.display = 'none';
-      status.textContent = 'No authorization code received';
-      status.className = 'status error';
-      document.getElementById('error-message').textContent = 'Missing code parameter. Please try again.';
-      errorDisplay.style.display = 'block';
-    }
-  </script>
+<h1>Connecting NetSuite</h1>
+<p id="msg">Sending you back to yoraito-sync on this computer...</p>
+<script>
+// Static relay for NetSuite logins. NetSuite only redirects to https:// addresses (or a
+// custom URL scheme), never to http://127.0.0.1, so the integration record registers this
+// page as its redirect URI. The page holds no secrets and calls no server: it reads
+// NetSuite's reply and forwards it, unchanged, to the daemon on 127.0.0.1. The port comes
+// from the state the daemon created (v1.<nonce>.<port>). Nothing else is ever a
+// destination, so the page cannot be used as an open redirect. The login uses PKCE, so a
+// code that leaks from here is useless without the verifier, which stays in the daemon.
+(function () {
+  var params = new URLSearchParams(window.location.search);
+  var parts = (params.get("state") || "").split(".");
+  var port = Number(parts[2]);
+  var msg = document.getElementById("msg");
+  if (parts[0] !== "v1" || !parts[1] || !/^[0-9]+$/.test(parts[2] || "") || port < 1024 || port > 65535) {
+    msg.textContent = "This link did not come from yoraito-sync. Start the connection again from the app.";
+    return;
+  }
+  var forward = new URLSearchParams();
+  ["code", "state", "company", "error"].forEach(function (k) {
+    if (params.has(k)) forward.set(k, params.get(k));
+  });
+  // Replace this page's history entry so the code is not left in the back button.
+  window.location.replace("http://127.0.0.1:" + port + "/oauth/netsuite/callback?" + forward.toString());
+})();
+</script>
+<noscript><p>Turn on JavaScript, or copy this page's address and replace everything before <code>?</code> with <code>http://127.0.0.1:8765/oauth/netsuite/callback</code>.</p></noscript>
 </body>
 </html>
